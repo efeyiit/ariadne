@@ -3,6 +3,7 @@
 from collections import Counter, defaultdict
 
 from app.diagrams import render_mermaid
+from app.local.search import related_locations, select_evidence
 
 from datetime import datetime, timezone
 
@@ -12,7 +13,7 @@ import re
 
 
 
-from app.rag.chat.service import ChatPrompt, ChatProviderAnswer, Evidence, INSTRUCTIONS, _redact
+from app.rag.chat.service import ChatPrompt, ChatProviderAnswer, INSTRUCTIONS, _redact
 
 
 
@@ -22,64 +23,40 @@ VERSION = 1
 
 
 
-def explain(provider, source, path, line, question):
-
+def explain(provider, source, path, line, question, *, related=()):
     if provider is None:
-
         return {'status': 'unavailable', 'claims': []}
-
-    lines = source.sources[path].splitlines()
-
-    start = max(0, line - 1)
-
-    text = _redact('\n'.join(lines[start:start + 48]))[:6500]
-
-    if not text.strip():
-
+    hits = []
+    for selected_path, selected_line in [(path, line), *list(related)[:2]]:
+        if selected_path not in source.sources:
+            continue
+        lines = source.sources[selected_path].splitlines()
+        start = max(0, selected_line - 1)
+        text = _redact('\n'.join(lines[start:start + 48]))
+        hits.append({'path': selected_path, 'start_line': start + 1, 'end_line': start + len(text.splitlines()), 'text': text})
+    evidence = select_evidence(hits, question, source.commit_sha or source.snapshot_id, multi_file=bool(related))
+    if not evidence:
         return {'status': 'no_evidence', 'claims': []}
-
-    end = start + len(text.splitlines())
-
-    evidence = Evidence('E1', path, start + 1, end, source.commit_sha or source.snapshot_id, text)
-
+    known = {item.id: item for item in evidence}
     try:
-
-        output = ChatProviderAnswer.model_validate(provider.answer(ChatPrompt(INSTRUCTIONS, question, (evidence,))))
-
+        output = ChatProviderAnswer.model_validate(provider.answer(ChatPrompt(INSTRUCTIONS, question, evidence)))
         claims = []
-
         for claim in output.claims:
-
             citations = []
-
             for cite in claim.citations:
-
-                if cite.evidence_id != 'E1' or not start + 1 <= cite.start_line <= cite.end_line <= end:
-
+                item = known.get(cite.evidence_id)
+                if item is None or not item.start_line <= cite.start_line <= cite.end_line <= item.end_line:
                     raise ValueError('Citation outside selected source')
-
-                original = '\n'.join(lines[cite.start_line - 1:cite.end_line])
-
-                if not cite.quote.strip() or cite.quote not in original or cite.quote not in text or _redact(cite.quote) != cite.quote:
-
+                original = '\n'.join(source.sources[item.path].splitlines()[cite.start_line - 1:cite.end_line])
+                if not cite.quote.strip() or cite.quote not in original or cite.quote not in item.text or _redact(cite.quote) != cite.quote:
                     raise ValueError('Citation differs from supplied source')
-
-                citations.append({'path': path, 'start_line': cite.start_line, 'end_line': cite.end_line, 'quote': cite.quote})
-
+                citations.append({'path': item.path, 'start_line': cite.start_line, 'end_line': cite.end_line, 'quote': cite.quote})
             claims.append({'text': _redact(claim.text), 'citations': citations})
-
         return {'status': 'answered' if claims else 'no_evidence', 'claims': claims}
-
     except ValueError:
-
         return {'status': 'rejected', 'claims': []}
-
     except Exception:
-
         return {'status': 'unavailable', 'claims': []}
-
-
-
 
 
 def build_review(source, report, *, language='en', provider=None, should_stop=lambda: False):
@@ -141,6 +118,7 @@ def build_review(source, report, *, language='en', provider=None, should_stop=la
 
     readmes = sorted((p for p in source.sources if PurePosixPath(p).name.lower().startswith('readme')), key=lambda p: (p.count('/'), p))
 
+    application_modules = [module for module in modules if not support_file(module['path'])]
     purpose = {'status': 'no_evidence', 'claims': []}
 
     calls = 0
@@ -149,11 +127,11 @@ def build_review(source, report, *, language='en', provider=None, should_stop=la
 
         purpose = explain(provider, source, readmes[0], 1,
 
-                          ('Bu belgeye göre proje ne işe yarıyor ve kimin için? İki kısa cümleyle açıkla.' if language == 'tr' else 'According to this document, what is this project for and who uses it? Give two short sentences.'))
+                          ('Belgede ve kodda gösterilen işlemleri iki kısa cümleyle açıkla. Modül adlarından ekleme, okuma, güncelleme veya silme özelliği çıkarma; sadece görünen işlemleri anlat.' if language == 'tr' else 'Summarize the operations demonstrated in the document and code in two short sentences. Do not infer create/read/update/delete features from module names; describe only operations shown.'),
+                          related=[(m['path'], 1) for m in application_modules[:2]])
 
         calls += provider is not None
 
-    application_modules = [module for module in modules if not support_file(module['path'])]
     for module in (application_modules or modules)[:3]:
 
         if should_stop():
@@ -164,9 +142,17 @@ def build_review(source, report, *, language='en', provider=None, should_stop=la
         if deterministic is not None:
             module['explanation'] = deterministic
             continue
+        related = related_locations(graph, module['path'])[:2]
+        seen = {module['path'], *(path for path, _ in related)}
+        for neighbor, _ in list(related):
+            for path, line in related_locations(graph, neighbor):
+                if path not in seen and len(related) < 2:
+                    related.append((path, line))
+                    seen.add(path)
         module['explanation'] = explain(provider, source, module['path'], 1,
 
-                                       ('Bu kod ne yapıyor? Görünen sorumluluğunu en fazla iki kısa cümleyle açıkla.' if language == 'tr' else 'What does this code do? Explain its visible responsibility in at most two short sentences.'))
+                                       (f"{module['path']} dosyası ne yapıyor ve ilişkili dosyalara nasıl bağlanıyor? İki kısa cümleyle açıkla. Dönüş değerlerini iş anlamı tahmin etmek yerine koddaki ifadelerle anlat." if language == 'tr' else f"What does {module['path']} do and how does it connect to the related files? Give two short sentences. Describe return values using the code expressions instead of guessing domain meanings."),
+                                       related=related)
 
         calls += provider is not None
 

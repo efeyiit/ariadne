@@ -3,6 +3,8 @@ export type Language = 'en' | 'tr';
 const key = 'ariadne:language';
 export function initialLanguage(saved: string | null): Language { return saved === 'tr' ? 'tr' : 'en'; }
 const tr: Record<string, string> = {
+ 'Sources supplied to the model':'Modele verilen kaynaklar',
+ 'Ask about a function or trace a flow across files. The local model uses up to four source files; this is not an exhaustive project review.':'Bir fonksiyonu sor veya dosyalar arasındaki bir akışı incele. Yerel model en fazla dört kaynak dosya kullanır; bu, projenin tamamının incelendiği anlamına gelmez.',
  'Code diagrams':'Kod diyagramları', 'Diagram view':'Diyagram görünümü', 'Diagram format':'Diyagram biçimi',
  'Files and dependencies':'Dosyalar ve bağımlılıklar', 'Classes':'Sınıflar', 'Calls':'Çağrılar',
  'Download diagram source':'Diyagram kaynağını indir', 'Show diagram source':'Diyagram kaynağını göster',

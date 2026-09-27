@@ -8,7 +8,8 @@ from uuid import NAMESPACE_URL, uuid5
 from qdrant_client import QdrantClient, models
 
 from app.local.store import LocalStore
-from app.rag.chat.service import ChatPrompt, ChatProviderAnswer, Evidence, INSTRUCTIONS, _redact
+from app.local.search import chunks_for, expand_related, rank_chunks, select_evidence
+from app.rag.chat.service import ChatPrompt, ChatProviderAnswer, INSTRUCTIONS, _redact
 
 
 class LocalRetrieval:
@@ -18,7 +19,7 @@ class LocalRetrieval:
         self.store, self.embedding, self.provider = store, embedding, answer_provider
         self._lock = RLock()
         self.client = QdrantClient(path=str(data_dir), force_disable_check_same_thread=True)
-        self.collection = "local_" + sha256((embedding.model_id + str(embedding.dimension)).encode()).hexdigest()[:20]
+        self.collection = "local_v2_" + sha256((embedding.model_id + str(embedding.dimension)).encode()).hexdigest()[:20]
         if not self.client.collection_exists(self.collection):
             self.client.create_collection(self.collection, vectors_config=models.VectorParams(size=embedding.dimension, distance=models.Distance.COSINE))
 
@@ -40,17 +41,7 @@ class LocalRetrieval:
     def index_snapshot(self, repository_id: str, snapshot_id: str) -> int:
         with self._lock:
             source = self._source(repository_id, snapshot_id)
-            chunks = []
-            for path, text in sorted(source.sources.items()):
-                lines = text.splitlines()
-                for start in range(0, len(lines), 42):
-                    selected = lines[start:start + 48]
-                    excerpt = _redact("\n".join(selected))[:8000]
-                    if excerpt.strip():
-                        chunks.append({"repository_id": repository_id, "snapshot_id": snapshot_id, "path": path,
-                                       "start_line": start + 1, "end_line": start + len(selected), "text": excerpt})
-                    if len(chunks) > 2048:
-                        raise ValueError("Optional AI indexing is limited to 2048 source chunks")
+            chunks = chunks_for(source)
             if self.client.count(self.collection, count_filter=self._filter(repository_id, snapshot_id), exact=True).count == len(chunks):
                 return len(chunks)
             for start in range(0, len(chunks), 4):
@@ -67,12 +58,16 @@ class LocalRetrieval:
         if not question.strip() or len(question) > 1000:
             raise ValueError("Question must contain 1 to 1000 characters")
         with self._lock:
-            self._source(repository_id, snapshot_id)
+            source = self._source(repository_id, snapshot_id)
             if not self.client.count(self.collection, count_filter=self._filter(repository_id, snapshot_id), exact=True).count:
                 return []
             result = self.client.query_points(self.collection, query=list(self.embedding.embed_query(question)),
-                                             query_filter=self._filter(repository_id, snapshot_id), limit=6, with_payload=True)
-            return [point.payload for point in result.points]
+                                             query_filter=self._filter(repository_id, snapshot_id), limit=12, with_payload=True)
+            chunks = chunks_for(source)
+            ranked = rank_chunks(chunks, [point.payload for point in result.points], question)
+            analysis = self.store.latest_analysis(repository_id, snapshot_id)
+            graph = (analysis['report'].get('dependencies') or {}) if analysis else {}
+            return expand_related(ranked, graph, question, inventory=chunks)
 
     def ask(self, repository_id: str, snapshot_id: str, question: str) -> dict:
         source = self._source(repository_id, snapshot_id)
@@ -82,16 +77,8 @@ class LocalRetrieval:
         try:
             self.index_snapshot(repository_id, snapshot_id)
             hits = self.search(repository_id, snapshot_id, question)
-            evidence = []
-            budget = 12000
-            # The small local model answers reliably from focused evidence;
-            # unrelated neighbors caused abstentions even with the right top hit.
-            for hit in hits[:1]:
-                text = hit["text"][:budget]
-                if not text:
-                    break
-                evidence.append(Evidence(f"E{len(evidence) + 1}", hit["path"], hit["start_line"], hit["end_line"], source.commit_sha or snapshot_id, text))
-                budget -= len(text)
+            evidence = select_evidence(hits, question, source.commit_sha or snapshot_id)
+            context = [{'path': item.path, 'start_line': item.start_line, 'end_line': item.end_line} for item in evidence]
             if not evidence:
                 return unavailable | {"status": "no_evidence", "answer": "No source evidence is available for this snapshot."}
             output = ChatProviderAnswer.model_validate(self.provider.answer(ChatPrompt(INSTRUCTIONS, _redact(question), tuple(evidence))))
@@ -104,13 +91,13 @@ class LocalRetrieval:
                     if item is None or not item.start_line <= citation.start_line <= citation.end_line <= item.end_line:
                         raise ValueError("Citation outside supplied evidence")
                     excerpt = "\n".join(source.sources[item.path].splitlines()[citation.start_line - 1:citation.end_line])
-                    if citation.quote not in excerpt or citation.quote not in item.text or _redact(citation.quote) != citation.quote:
+                    if not citation.quote.strip() or citation.quote not in excerpt or citation.quote not in item.text or _redact(citation.quote) != citation.quote:
                         raise ValueError("Citation quote does not match supplied source")
                     citations.append({"path": item.path, "start_line": citation.start_line, "end_line": citation.end_line,
                                       "quote": citation.quote, "snapshot_id": snapshot_id})
                 claims.append({"text": _redact(claim.text), "citations": citations})
             return {"status": "answered" if claims else "no_evidence", "answer": "\n".join(claim["text"] for claim in claims) if claims else "The model did not find enough source evidence to answer this question.",
-                    "claims": claims, "snapshot_id": snapshot_id}
+                    "claims": claims, "snapshot_id": snapshot_id, "context": context}
         except ValueError:
             return unavailable | {"status": "rejected", "answer": "The model response could not be verified against the selected source."}
         except Exception:

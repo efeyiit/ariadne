@@ -25,14 +25,17 @@ loads both models before binding its port. `GET /health` is tokenless and
 returns `status: ready`, model IDs, embedding dimension 384, and `local`
 execution location. `POST /answer` and `POST /embed` require the token.
 The server is single threaded, so one request runs at a time. Answer context
-is bounded to 4,096 tokens with up to 384 generated tokens. The input body is
-bounded to 64 KB. The `two-stage-passage-selection-v6` workflow first produces a
+is bounded to 4,096 tokens with up to 512 generated tokens. The input body is
+bounded to 64 KB. The `multi-source-passage-selection-v11` workflow first produces a
 source-based draft, then formats it into claims with supplied passage IDs. An
 unsupported draft stops immediately. Only validated final claims reach the API;
 the server derives source coordinates and exact quotes from the selected passages.
-Distinct claims may cite the same passage. One formatting repair is allowed
-(at most three generations including the draft). Invalid output then
-becomes `rejected`, with no invented answer fallback. Transport failures are
+Multi-file claims can select up to three passages, including different files.
+Single-file requests preserve the earlier focused prompts and one passage per
+claim. Distinct claims may cite the same passage. One formatting repair is
+allowed; multi-file repair also receives the failed selection alongside the
+validation error (at most three generations including the draft).
+Invalid output then becomes `rejected`, with no invented answer fallback. Transport failures are
 `unavailable`. T21 independently rechecks live authorization and citations.
 
 `LocalAnswerProvider` and `LocalEmbeddingProvider` in
@@ -46,7 +49,7 @@ The small public-repository diagnostic showed README rank 1 for a Turkish
 purpose question with E5 versus rank 5 with English-focused BGE. This does
 not by itself establish end-to-end answer quality.
 
-The 27 September 2026 production-code run passed 18 synthetic real-model cases covering
+The earlier v6 production-code run on 27 September 2026 passed 18 synthetic real-model cases covering
 English/Turkish answers, conditional returns, absent features, and two source
 instruction attacks. This is a bounded regression set, not a guarantee of factual
 correctness on arbitrary repositories. Citation validation verifies source mapping,

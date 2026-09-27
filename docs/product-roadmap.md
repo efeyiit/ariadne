@@ -9,14 +9,14 @@ These areas describe the full intended scope. Some are implemented in the local 
 1. **Repository intake and identity:** public GitHub import and local/private source-folder import are available without login. Public snapshots retain a full commit SHA; local snapshots use a content identity. Hosted private GitHub access remains part of the separate authenticated-server work.
 2. **Code structure:** parse Python, TypeScript, Java, C#, and C++; build symbol, module, and dependency relationships; detect cycles and infer architecture from traceable evidence.
 3. **Analysis outputs:** generate dependency and UML views; identify code smells, SOLID concerns, refactoring opportunities, test gaps, and security risks; propose tests, README text, API documentation, and technical-debt summaries.
-4. **Source-linked assistance:** optional local chat currently answers from one highest-ranked source excerpt, with source-line and quote validation. The repository review now includes bounded project/module explanations and prioritized actions. Broad and multi-file reasoning and wider-context retrieval remain limited. Simple Python return/print explanations use AST evidence; arbitrary model interpretations still require review. Rule-based findings stay separate from AI interpretations.
+4. **Source-linked assistance:** optional local chat combines semantic and lexical retrieval within a saved snapshot. Focused questions use one excerpt; multi-file flow questions can use up to four files, with bounded expansion through resolved saved dependencies. Claims can cite several passages. The repository review supplies related files to project/module explanations and preserves prioritized actions. See the [multi-file evaluation](evidence/2026-09-27-multifile-ai.md). Broader context and semantic correctness remain limited. Simple Python return/print explanations use AST evidence; arbitrary model interpretations still require review. Rule-based findings stay separate from AI interpretations.
 5. **Application and scale:** persist analyses, run jobs asynchronously, cache by branch and commit, expose report APIs, and present findings, diagrams, tests, security, documentation, and chat in the web interface.
 6. **Change tracking and delivery:** support incremental analysis, pull-request diffs and webhooks, issue drafts with an explicit publish action, architecture history, containerized operation, CI, evaluation, and an end-to-end demo.
 
 ## Remaining local-product work
 
 - Connect the existing test-design generator to a usable local report/authoring flow; its presence as a module is not end-to-end delivery.
-- Improve multi-file retrieval and explanation quality, evaluated against representative repositories and questions with known answers.
+- Broaden multi-file retrieval evaluation beyond the small acceptance corpus, including large files, ambiguous names and longer dependency chains; improve explanation quality against known answers.
 - Expose analysis history and comparisons, then verify incremental updates without stale source references or findings.
 - Complete and verify the intended pull-request/issue workflows separately from the account-free local path.
 - Broaden real-repository acceptance, failure/recovery checks and the reproducible demonstration. PostgreSQL-dependent skipped tests do not establish hosted-server readiness.

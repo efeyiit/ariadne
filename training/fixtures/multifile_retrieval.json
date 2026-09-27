@@ -1,0 +1,61 @@
+{
+  "description": "Synthetic in-memory order flow; never execute this repository code. Labels cover citation paths, not universal answer truthfulness.",
+  "files": [
+    {
+      "path": "api.py",
+      "content": "from service import checkout\n\ndef submit_order(item, quantity):\n    return checkout(item, quantity)\n"
+    },
+    {
+      "path": "service.py",
+      "content": "from repository import save_order\n\ndef checkout(item, quantity):\n    if quantity <= 0:\n        raise ValueError(\"quantity must be positive\")\n    order = {\"item\": item, \"quantity\": quantity}\n    return save_order(order)\n"
+    },
+    {
+      "path": "repository.py",
+      "content": "orders = []\n\ndef save_order(order):\n    orders.append(order)\n    return len(orders)\n"
+    },
+    {
+      "path": "README.md",
+      "content": "# Order example\nAn in-memory order example with an API function, validation service and storage module.\n"
+    },
+    {
+      "path": "docs/migration.md",
+      "content": "A future migration might add a PostgreSQL table. No database integration is implemented.\n"
+    }
+  ],
+  "queries": [
+    {
+      "id": "flow-en",
+      "question": "Trace submit_order across api.py, service.py, and repository.py. How is an order validated and saved?",
+      "required_paths": [
+        "api.py",
+        "service.py",
+        "repository.py"
+      ],
+      "expected_status": "answered"
+    },
+    {
+      "id": "flow-tr",
+      "question": "api.py, service.py ve repository.py arasındaki sipariş akışını anlat. Sipariş nasıl doğrulanıyor ve kaydediliyor?",
+      "required_paths": [
+        "api.py",
+        "service.py",
+        "repository.py"
+      ],
+      "expected_status": "answered"
+    },
+    {
+      "id": "single",
+      "question": "What does save_order return in repository.py?",
+      "required_paths": [
+        "repository.py"
+      ],
+      "expected_status": "answered"
+    },
+    {
+      "id": "absent",
+      "question": "Which PostgreSQL table stores the orders?",
+      "required_paths": [],
+      "expected_status": "no_evidence"
+    }
+  ]
+}

@@ -91,7 +91,7 @@ def test_review_ai_receives_the_requested_language_and_cancel_stops_calls():
             prompts.append(prompt.question)
             return {'claims': []}
     build_review(source, {'findings': []}, language='tr', provider=Provider())
-    assert 'Bu belgeye' in prompts[0]
+    assert 'iki kısa cümle' in prompts[0]
     build_review(source, {'findings': []}, provider=Provider(), should_stop=lambda: True)
     assert len(prompts) == 1
 
@@ -119,3 +119,34 @@ def test_nontrivial_source_is_not_presented_as_a_simple_expression():
     from app.local.review import source_explanation
     source = import_files('Math', [UploadedSource(path='main.py', content='def main():\n    dangerous()\n    return 1\n')])
     assert source_explanation(source, 'main.py', 'en') is None
+
+
+def test_review_module_uses_resolved_related_file_evidence():
+    from app.local.review import build_review
+    from app.analyzers.dependencies import analyze_dependencies
+    from app.parsers.python import parse_file
+    source = import_files('Flow', [UploadedSource(path='api.py',content='from service import checkout\ndef submit():\n    return checkout()\n'),
+                                   UploadedSource(path='service.py',content='from storage import save\ndef checkout():\n    return save()\n'),
+                                   UploadedSource(path='storage.py',content='def save():\n    print("saved")\n    return 1\n')])
+    graph = analyze_dependencies([parse_file(path,text) for path,text in source.sources.items()]).model_dump()
+    prompts = []
+    class Provider:
+        def answer(self, prompt):
+            prompts.append(prompt)
+            return {'claims': []}
+    build_review(source, {'findings': [], 'dependencies': graph}, provider=Provider())
+    api = next(prompt for prompt in prompts if prompt.evidence[0].path == 'api.py')
+    assert 'api.py' in api.question
+    assert {e.path for e in api.evidence} == {'api.py','service.py','storage.py'}
+
+
+def test_review_cross_file_citations_are_checked_against_their_own_sources():
+    from app.local.review import explain
+    source = import_files('Flow', [UploadedSource(path='one.py',content='first = 1'),UploadedSource(path='two.py',content='second = 2')])
+    class Provider:
+        def __init__(self, wrong=False): self.wrong=wrong
+        def answer(self,prompt):
+            item=prompt.evidence[1]
+            return {'claims':[{'text':'Two sources.', 'citations':[{'evidence_id':item.id,'start_line':1,'end_line':1,'quote':'first = 1' if self.wrong else 'second = 2'}]}]}
+    assert explain(Provider(),source,'one.py',1,'Explain both.',related=[('two.py',1)])['status']=='answered'
+    assert explain(Provider(True),source,'one.py',1,'Explain both.',related=[('two.py',1)])['status']=='rejected'

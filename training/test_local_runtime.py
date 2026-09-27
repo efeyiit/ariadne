@@ -39,6 +39,15 @@ class PassageSelectionTests(unittest.TestCase):
                                     "end_line": 2,
                                     "quote": "def answer():\n    return 42"})
 
+    def test_cross_file_claim_has_multiple_server_derived_citations(self):
+        passages = Runtime._passages(EVIDENCE + [dict(EVIDENCE[0], id='E2', path='other.py')])
+        raw = json.dumps({'claims':[{'text':'Both files define answer.', 'passage_ids':['P01','P02']}]})
+        output = Runtime._check_selection(raw, passages)
+        self.assertEqual([c['evidence_id'] for c in output['claims'][0]['citations']], ['E1','E2'])
+        for invalid in ([], ['P01','P99'], ['P01','P01'], ['P01'] * 4, 'P01'):
+            with self.subTest(ids=invalid), self.assertRaises(Rejected):
+                Runtime._check_selection(json.dumps({'claims':[{'text':'x','passage_ids':invalid}]}), passages)
+
     def test_unknown_and_conflicting_ids_reject(self):
         passages = Runtime._passages(EVIDENCE)
         for claims in (
@@ -104,6 +113,21 @@ class PassageSelectionTests(unittest.TestCase):
                          "def answer():\n    return 42")
         self.assertEqual(len(calls), 2)
 
+    def test_repair_receives_failed_selection_and_validation_error(self):
+        runtime = Runtime.__new__(Runtime)
+        evidence = EVIDENCE + [dict(EVIDENCE[0], id='E2', path='other.py')]
+        bad = json.dumps({'claims': [{'text': 'src/example.py and other.py define answer.', 'passage_ids': ['P99']}]})
+        good = bad.replace('["P99"]', '["P01", "P02"]')
+        calls = []
+        replies = iter((bad, good))
+        def generate(messages):
+            calls.append(messages)
+            return next(replies)
+        runtime._generate = generate
+        runtime.answer(dict(REQUEST, evidence=evidence))
+        self.assertEqual(calls[1][-2], {'role': 'assistant', 'content': bad})
+        self.assertIn('unknown passage ID', calls[1][-1]['content'])
+
     def test_two_invalid_generations_reject_without_fallback(self):
         runtime = Runtime.__new__(Runtime)
         calls = []
@@ -119,6 +143,20 @@ class PassageSelectionTests(unittest.TestCase):
 
 
 class DraftPipelineTests(unittest.TestCase):
+    def test_only_multiple_source_files_enable_flow_instructions(self):
+        for multi in (False, True):
+            runtime = Runtime.__new__(Runtime)
+            calls = []
+            replies = iter(('The function returns 42.', VALID))
+            def generate(messages):
+                calls.append(messages)
+                return next(replies)
+            runtime._generate = generate
+            evidence = EVIDENCE + ([dict(EVIDENCE[0], id='E2', path='other.py')] if multi else [])
+            runtime.answer(dict(REQUEST, evidence=evidence))
+            self.assertEqual('For cross-file questions' in calls[0][0]['content'], multi)
+            self.assertEqual('passage_ids' in calls[1][0]['content'], multi)
+
     def test_empty_draft_is_not_filled_in_by_formatter(self):
         runtime = Runtime.__new__(Runtime)
         calls = []
