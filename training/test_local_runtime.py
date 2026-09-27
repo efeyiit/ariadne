@@ -32,12 +32,10 @@ class PassageSelectionTests(unittest.TestCase):
                                     "end_line": 2,
                                     "quote": "def answer():\n    return 42"})
 
-    def test_unknown_reused_and_conflicting_ids_reject(self):
+    def test_unknown_and_conflicting_ids_reject(self):
         passages = Runtime._passages(EVIDENCE)
         for claims in (
             [{"text": "wrong", "passage_id": "P99"}],
-            [{"text": "a", "passage_id": "P01"},
-             {"text": "b", "passage_id": "P01"}],
             [{"text": "wrong", "passage_id": "P01", "quote": "fake"}],
         ):
             with self.subTest(claims=claims), self.assertRaises(Rejected):
@@ -46,6 +44,43 @@ class PassageSelectionTests(unittest.TestCase):
             Runtime._check_selection(
                 '{"claims":[],"claims":[{"text":"a","passage_id":"P01"}]}',
                 passages)
+
+    def test_distinct_claims_can_share_exact_source_without_repair(self):
+        runtime = Runtime.__new__(Runtime)
+        calls = []
+        raw = json.dumps({"claims": [
+            {"text": "answer is a function", "passage_id": "P01"},
+            {"text": "answer returns 42", "passage_id": "P01"},
+        ]})
+        def generate(messages):
+            calls.append(messages)
+            return raw
+        runtime._generate = generate
+        result = runtime.answer(REQUEST)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(len(result["claims"]), 2)
+        for claim in result["claims"]:
+            self.assertEqual(claim["citations"][0], {
+                "evidence_id": "E1", "start_line": 1, "end_line": 2,
+                "quote": "def answer():\n    return 42"})
+
+    def test_shared_passage_does_not_allow_unknown_second_citation(self):
+        raw = json.dumps({"claims": [
+            {"text": "answer returns 42", "passage_id": "P01"},
+            {"text": "another claim", "passage_id": "P99"},
+        ]})
+        with self.assertRaises(Rejected):
+            Runtime._check_selection(raw, Runtime._passages(EVIDENCE))
+
+    def test_valid_abstention_does_not_retry_into_an_invented_answer(self):
+        runtime = Runtime.__new__(Runtime)
+        calls = []
+        def generate(messages):
+            calls.append(messages)
+            return '{"claims":[]}'
+        runtime._generate = generate
+        self.assertEqual(runtime.answer(REQUEST), {"claims": []})
+        self.assertEqual(len(calls), 1)
 
     def test_one_repair_accepts_valid_second_generation(self):
         runtime = Runtime.__new__(Runtime)

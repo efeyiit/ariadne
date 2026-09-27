@@ -31,7 +31,7 @@ TOKEN_ENV = "ARIADNE_LOCAL_RUNTIME_TOKEN"
 DIAGNOSTICS_ENV = "ARIADNE_LOCAL_RUNTIME_DIAGNOSTICS"
 DIAGNOSTICS_PATH = Path(__file__).resolve().parent / "reports" / "local-runtime-diagnostics.jsonl"
 RUNTIME_CODE_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
-PROMPT_VERSION = "opaque-passage-selection-v4"
+PROMPT_VERSION = "shared-passage-selection-v5"
 MAX_BODY = 64_000
 MAX_CONTEXT_TOKENS = 4096
 MAX_NEW_TOKENS = 384
@@ -123,7 +123,6 @@ class Runtime:
         claims = parsed["claims"]
         if not isinstance(claims, list) or len(claims) > 3:
             raise Rejected("invalid claims list")
-        used = set()
         output = []
         for claim in claims:
             if (not isinstance(claim, dict) or set(claim) != {"text", "passage_id"}
@@ -132,9 +131,8 @@ class Runtime:
                     or not isinstance(claim["passage_id"], str)):
                 raise Rejected("invalid selection claim")
             identifier = claim["passage_id"]
-            if identifier not in passages or identifier in used:
-                raise Rejected("unknown or reused passage ID")
-            used.add(identifier)
+            if identifier not in passages:
+                raise Rejected("unknown passage ID")
             passage = passages[identifier]
             output.append({"text": claim["text"], "citations": [{
                 "evidence_id": passage["evidence_id"],
@@ -194,7 +192,7 @@ class Runtime:
             "Return ONLY JSON in this shape: "
             "{\"claims\":[{\"text\":\"short answer\",\"passage_id\":\"P01\"}]}. "
             "Choose an existing passage ID that directly supports each claim. "
-            "Use at most three short claims and do not reuse a passage ID. "
+            "Use at most three short claims. Distinct claims may cite the same passage. "
             "Write claim text in Turkish when the question is Turkish. "
             "The server attaches source lines and quotes; never write them yourself. "
             "If the passages do not support an answer, return exactly {\"claims\":[]}. "
