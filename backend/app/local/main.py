@@ -191,6 +191,31 @@ def create_local_app(data_dir: Path, *, max_body_bytes: int = 30 * 1024 * 1024) 
             raise HTTPException(404, "REPORT_NOT_FOUND")
         return JSONResponse(result["report"], headers={"Content-Disposition": 'attachment; filename="ariadne-analysis.json"', "Cache-Control": "no-store"})
 
+    @app.get("/api/local/diagrams")
+    def diagrams(repository_id: str, snapshot_id: str, analysis_id: str):
+        saved = get_source(repository_id, snapshot_id)
+        result = store.load_analysis(analysis_id)
+        if result is None:
+            raise HTTPException(404, "REPORT_NOT_FOUND")
+        if (result["repository_id"], result["snapshot_id"]) != (repository_id, snapshot_id):
+            raise HTTPException(409, "DIAGRAM_SNAPSHOT_MISMATCH")
+        graph = result["report"].get("dependencies")
+        if graph is None:
+            raise HTTPException(404, "DIAGRAM_UNAVAILABLE")
+        from app.ai.orchestration.coordinator import _parse
+        from app.local.runtime import material_for
+        from app.diagrams import render_diagrams
+        try:
+            # The same inert parser path as analysis supplies actual class kinds.
+            # Source snapshots are immutable; never import or execute their code.
+            bundles = render_diagrams(graph, _parse(material_for(saved)))
+        except ValueError:
+            raise HTTPException(422, "DIAGRAM_UNAVAILABLE") from None
+        return JSONResponse({"repository_id": repository_id, "snapshot_id": snapshot_id,
+                             "analysis_id": analysis_id,
+                             "diagrams": {name: asdict(bundle) for name, bundle in bundles.items()}},
+                            headers={"Cache-Control": "no-store"})
+
     frontend = Path(__file__).resolve().parents[3] / "frontend" / "dist"
     if frontend.is_dir():
         app.mount("/assets", StaticFiles(directory=frontend / "assets"), name="assets")

@@ -3,6 +3,14 @@ export type Language = 'en' | 'tr';
 const key = 'ariadne:language';
 export function initialLanguage(saved: string | null): Language { return saved === 'tr' ? 'tr' : 'en'; }
 const tr: Record<string, string> = {
+ 'Code diagrams':'Kod diyagramları', 'Diagram view':'Diyagram görünümü', 'Diagram format':'Diyagram biçimi',
+ 'Files and dependencies':'Dosyalar ve bağımlılıklar', 'Classes':'Sınıflar', 'Calls':'Çağrılar',
+ 'Download diagram source':'Diyagram kaynağını indir', 'Show diagram source':'Diyagram kaynağını göster',
+ 'Loading diagrams…':'Diyagramlar yükleniyor…', 'Retry diagrams':'Diyagramları yeniden yükle',
+ 'Choose a view of the saved code. Mermaid previews stay on this computer; PlantUML is available as source.':'Kaydedilen kod için bir görünüm seç. Mermaid önizlemesi bu bilgisayarda çizilir; PlantUML kaynak olarak sunulur.',
+ 'Diagrams are unavailable for this analysis. The graph may be missing or exceed the render limit.':'Bu analiz için diyagram oluşturulamadı. Bağımlılık verisi eksik olabilir veya çizim sınırını aşmış olabilir.',
+ 'Calls are inferred from source locations. This is not a runtime trace or proof of execution order.':'Çağrılar kaynak koddan çıkarılır. Bu görünüm gerçek çalışma kaydı değildir ve yürütme sırasını kanıtlamaz.',
+ 'Parsed classes and evidenced inheritance are shown. Unresolved relationships remain labelled.':'Ayrıştırılan sınıflar ve kaynakla desteklenen kalıtım gösterilir. Çözülemeyen ilişkiler ayrıca işaretlenir.',
  'Open source':'Kaynağı aç', 'source nodes':'kaynak düğümü', 'relationships':'ilişki', 'cycles':'döngü', 'file':'dosya', 'symbol':'sembol',
  'SELECTED SOURCE NODE':'SEÇİLİ KAYNAK DÜĞÜMÜ', 'Select a graph node to inspect and open its source.':'Kaynağını incelemek için bir düğüm seç.',
  'Critical nodes':'Merkezi düğümler', 'Graph nodes':'Graf düğümleri', 'Open a node’s source at this commit':'İncelenen sürümde düğümün kaynağını aç',

@@ -155,3 +155,10 @@ def test_component_view_omits_same_file_calls_and_deduplicates_repeated_calls(re
     text = renderer(source, "component")
     assert text.count("call resolved work") == 1
     assert "call resolved run" not in text
+
+
+def test_class_unresolved_inheritance_uses_class_grammar_arrow():
+    items = [parsed(python, 'main.py', 'class Child(Unknown): pass\n')]
+    source = render_mermaid(analyze_dependencies(items), 'class', items)
+    assert ' ..> ' in source
+    assert '-.->' not in source

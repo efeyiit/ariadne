@@ -234,7 +234,7 @@ def _mermaid(graph: DependencyGraph, view: View, structures: Iterable[object] | 
             if view == "component":
                 lines.append(f"{ids[edge.source]} -.->|{_mermaid_label(_relation(edge) + ' -> ' + suffix)}| {target_id}")
             else:
-                lines.append(f"{ids[edge.source]} -.-> {target_id} : {_mermaid_label(_relation(edge) + ' -> ' + suffix)}")
+                lines.append(f"{ids[edge.source]} ..> {target_id} : {_mermaid_label(_relation(edge) + ' -> ' + suffix)}")
     return "\n".join(lines) + "\n"
 
 
