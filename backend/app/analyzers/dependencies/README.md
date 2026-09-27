@@ -18,7 +18,14 @@ the parser's source location, original expression, and one of these statuses:
 
 TypeScript relative imports and reexports follow in-snapshot file paths and
 explicit exports. Python relative imports follow package depth and resolve
-against in-snapshot module paths. Java package names, C# namespaces, and C++
+against in-snapshot module paths. Absolute Python imports also recognize the
+conventional repository-root `src/` layout, including namespace packages.
+For example, `from sample.simple import add_one` can link to
+`src/sample/simple.py` and its `add_one` declaration. Competing root and `src/`
+modules remain ambiguous because runtime search-path order is unknown. Relative
+imports retain their physical package anchor. Arbitrary nested source roots,
+custom package mappings, and runtime `sys.path` changes are not inferred.
+Java package names, C# namespaces, and C++
 literal include paths are matched conservatively. Bare same-named symbols in
 unrelated files are never linked. Parser metadata does not distinguish a
 TypeScript default import from a namespace import, so that binding stays
@@ -38,6 +45,6 @@ cd backend
 uv run --no-sync pytest -q tests/dependencies tests/parsers
 ```
 
-The graph is a T10 module result. The shared `AnalysisResult` contract has no
-dependency-graph field yet; the API/persistence integration owner must map it
-through the later unified analysis contract without treating ambiguity as fact.
+The local analysis pipeline includes this graph in repository reports. Only
+resolved edges contribute to cycles and connectivity; ambiguity is retained
+in the report instead of being presented as a proven relationship.

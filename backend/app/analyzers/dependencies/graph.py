@@ -168,16 +168,24 @@ def analyze_dependencies(structures: Iterable[object]) -> DependencyGraph:
     node_paths = {node.id: node.location.path for node in nodes}
 
     python_modules: dict[str, set[str]] = defaultdict(set)
+    python_absolute_modules: dict[str, set[str]] = defaultdict(set)
     for path in by_path:
         if languages[path] == "python":
             module = path[:-3].replace("/", ".")
             if module.endswith(".__init__"):
                 module = module[:-9]
             python_modules[module].add(path)
+            python_absolute_modules[module].add(path)
+            # Conventional repository-root src layout. Keep original paths for
+            # relative imports; aliases must not change their package anchor.
+            # Runtime sys.path order is unknown, so retain competing candidates.
+            if path.startswith("src/") and module.startswith("src."):
+                python_absolute_modules[module[4:]].add(path)
 
     def paths_for_module(path: str, name: str) -> tuple[set[str], str | None, str | None]:
         language = languages[path]
         if language == "python":
+            modules = python_modules if name.startswith(".") else python_absolute_modules
             if name.startswith("."):
                 level = len(name) - len(name.lstrip("."))
                 module_parts = path[:-3].split("/")[:-1]
@@ -190,14 +198,14 @@ def analyze_dependencies(structures: Iterable[object]) -> DependencyGraph:
             else:
                 full = name
             for prefix in (".".join(full.split(".")[:end]) for end in range(len(full.split(".")), 0, -1)):
-                if python_modules[prefix]:
+                if modules[prefix]:
                     member = full[len(prefix):].lstrip(".") or None
                     if member and not any(
-                        qname == member for candidate in python_modules[prefix]
+                        qname == member for candidate in modules[prefix]
                         for qname in symbols[candidate]
                     ):
                         return set(), None, "missing_local_member"
-                    return python_modules[prefix], member, None
+                    return modules[prefix], member, None
             return set(), None, "missing_local_target" if name.startswith(".") else "external"
         if language == "typescript":
             if not name.startswith("."):

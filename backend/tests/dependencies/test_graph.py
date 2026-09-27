@@ -173,3 +173,37 @@ def test_missing_member_in_known_package_and_missing_include_are_uncertain():
     ])
     assert edge(graph, "import", "pkg.missing", "consumer.py").reason == "missing_local_member"
     assert edge(graph, "import", "not-present.hpp", "main.cpp").status == "ambiguous"
+
+
+def test_python_src_layout_import_and_call():
+    graph = analyze_dependencies([
+        parse(python, "src/sample/__init__.py", ""),
+        parse(python, "src/sample/simple.py", "def add_one(number): return number + 1\n"),
+        parse(python, "tests/test_simple.py", "from sample.simple import add_one\nadd_one(1)\n"),
+    ])
+    assert edge(graph, "import", "sample.simple.add_one", "tests/test_simple.py").target == "file:src/sample/simple.py"
+    assert edge(graph, "call", "add_one", "tests/test_simple.py").target == "symbol:src/sample/simple.py:add_one"
+
+
+def test_python_src_collision_is_ambiguous_but_relative_import_is_anchored():
+    graph = analyze_dependencies([
+        parse(python, "pkg/util.py", "def work(): pass\n"),
+        parse(python, "src/pkg/util.py", "def work(): pass\n"),
+        parse(python, "src/pkg/main.py", "from .util import work\nwork()\n"),
+        parse(python, "consumer.py", "from pkg.util import work\nwork()\n"),
+    ])
+    conflict = edge(graph, "import", "pkg.util.work", "consumer.py")
+    assert conflict.status == "ambiguous"
+    assert conflict.candidates == ["file:pkg/util.py", "file:src/pkg/util.py"]
+    assert edge(graph, "call", "work", "consumer.py").target is None
+    assert edge(graph, "call", "work", "src/pkg/main.py").target == "symbol:src/pkg/util.py:work"
+
+
+def test_python_src_namespace_package_and_unrelated_directory():
+    graph = analyze_dependencies([
+        parse(python, "src/namespace/util.py", "def work(): pass\n"),
+        parse(python, "vendor/other/util.py", "def work(): pass\n"),
+        parse(python, "main.py", "from namespace.util import work\nimport other.util\nwork()\n"),
+    ])
+    assert edge(graph, "call", "work", "main.py").target == "symbol:src/namespace/util.py:work"
+    assert edge(graph, "import", "other.util", "main.py").status == "external"
