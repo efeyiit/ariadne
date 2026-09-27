@@ -2,6 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { createSandboxDocument, validateMermaidSource, validateMermaidSvg } from '../../src/features/architecture/mermaid-security';
 
 describe('Mermaid input and sandbox boundary', () => {
+  it('preserves intrinsic diagram size instead of shrinking text to the frame', () => {
+    const document = createSandboxDocument('<svg viewBox="-8 -8 920 1800"><text>Readable</text></svg>');
+    expect(document).toContain('width:920px!important');
+    expect(document).toContain('height:1800px!important');
+    expect(document).not.toContain('max-height:100%');
+    expect(document).toContain('overflow:auto');
+  });
+
+  it('uses safe fallback dimensions when the viewBox is missing or excessive', () => {
+    for (const svg of ['<svg></svg>', '<svg viewBox="0 0 1e99 10"></svg>', '<svg viewBox="0 0 -1 10"></svg>']) {
+      expect(createSandboxDocument(svg)).toContain('width:800px!important');
+    }
+  });
+
   it('accepts only the expected T18 diagram grammar entry point', () => {
     expect(validateMermaidSource('classDiagram\n class n_a["User"]', 'class')).toBeNull();
     expect(validateMermaidSource('sequenceDiagram\n participant n_a as "User"', 'sequence')).toBeNull();

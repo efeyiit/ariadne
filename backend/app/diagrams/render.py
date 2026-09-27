@@ -109,7 +109,64 @@ def _target_label(edge: DependencyEdge, by_id: dict[str, DependencyNode]) -> str
     return edge.reason or edge.status
 
 
+def _component(graph: DependencyGraph, format: Format) -> str:
+    """Project symbol relationships onto files without inventing target files."""
+    nodes, ids = _nodes(graph), _ids(graph)
+    by_id = {node.id: node for node in nodes}
+    files = {node.location.path: node for node in nodes if node.kind == "file"}
+    mermaid = format == "mermaid"
+    label = _mermaid_label if mermaid else _label
+    lines = ["flowchart LR"] if mermaid else ["@startuml", "hide empty members"]
+
+    def declare(identity: str, name: str) -> None:
+        lines.append(f'{identity}["{label(name)}"]' if mermaid
+                     else f'component "{label(name)}" as {identity}')
+
+    for node in files.values():
+        declare(ids[node.id], node.name)
+    emitted: set[tuple[str, str, str]] = set()
+    placeholders: set[str] = set()
+    for edge in _edges(graph):
+        source_file = files.get(by_id[edge.source].location.path)
+        if source_file is None:
+            continue
+        src = ids[source_file.id]
+        resolved = edge.status == "resolved" and edge.target is not None
+        if resolved:
+            target_file = files.get(by_id[edge.target].location.path)
+            if target_file is None or target_file.id == source_file.id:
+                continue  # Internal calls are not file-level dependencies.
+            dst = ids[target_file.id]
+        else:
+            # A placeholder describes missing evidence, never a chosen candidate
+            # or a self-dependency. Sort candidates for deterministic rendering.
+            key = (src, edge.kind, edge.status, edge.expression,
+                   tuple(sorted(edge.candidates)), edge.reason)
+            dst = "u_" + hashlib.sha256(json.dumps(key).encode("utf-8")).hexdigest()[:16]
+            if dst not in placeholders:
+                detail = ("candidates: " + ", ".join(by_id[item].name for item in sorted(edge.candidates))
+                          if edge.candidates else edge.reason or edge.status)
+                declare(dst, f"{edge.status}: {edge.expression} — {detail}")
+                placeholders.add(dst)
+        relation = _relation(edge)
+        key = (src, dst, relation)
+        if key in emitted:
+            continue
+        emitted.add(key)
+        if mermaid:
+            arrow = "-->" if resolved else "-.->"
+            lines.append(f'{src} {arrow}|"{label(relation)}"| {dst}')
+        else:
+            arrow = "-->" if resolved else "..>"
+            lines.append(f'{src} {arrow} {dst} : "{label(relation)}"')
+    if not mermaid:
+        lines.append("@enduml")
+    return "\n".join(lines) + "\n"
+
+
 def _mermaid(graph: DependencyGraph, view: View, structures: Iterable[object] | None = None) -> str:
+    if view == "component":
+        return _component(graph, "mermaid")
     nodes, edges, ids = _nodes(graph), _edges(graph), _ids(graph)
     by_id = {node.id: node for node in nodes}
     class_ids = _class_ids(graph, structures)
@@ -182,6 +239,8 @@ def _mermaid(graph: DependencyGraph, view: View, structures: Iterable[object] | 
 
 
 def _plantuml(graph: DependencyGraph, view: View, structures: Iterable[object] | None = None) -> str:
+    if view == "component":
+        return _component(graph, "plantuml")
     nodes, edges, ids = _nodes(graph), _edges(graph), _ids(graph)
     by_id = {node.id: node for node in nodes}
     class_ids = _class_ids(graph, structures)
