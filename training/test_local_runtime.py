@@ -2,6 +2,7 @@
 
 import json
 import unittest
+from unittest.mock import patch
 
 from local_runtime_server import Rejected, Runtime
 
@@ -15,6 +16,12 @@ VALID = '{"claims":[{"text":"answer returns 42","passage_id":"P01"}]}'
 
 
 class PassageSelectionTests(unittest.TestCase):
+    def setUp(self):
+        # These tests exercise formatting and citations independently of drafting.
+        draft = patch.object(Runtime, '_draft_answer', return_value='answer returns 42', create=True)
+        draft.start()
+        self.addCleanup(draft.stop)
+
     def test_local_content_identity_is_accepted_without_fake_commit(self):
         runtime = Runtime.__new__(Runtime)
         runtime._generate = lambda messages: VALID
@@ -109,6 +116,56 @@ class PassageSelectionTests(unittest.TestCase):
         with self.assertRaises(Rejected):
             runtime.answer(REQUEST)
         self.assertEqual(len(calls), 2)
+
+
+class DraftPipelineTests(unittest.TestCase):
+    def test_empty_draft_is_not_filled_in_by_formatter(self):
+        runtime = Runtime.__new__(Runtime)
+        calls = []
+        def generate(messages):
+            calls.append(messages)
+            return '   '
+        runtime._generate = generate
+        with self.assertRaises(Rejected):
+            runtime.answer(REQUEST)
+        self.assertEqual(len(calls), 1)
+
+    def test_draft_reaches_formatter_but_only_claims_reach_api(self):
+        runtime = Runtime.__new__(Runtime)
+        replies = iter(('The function returns 42.', VALID))
+        calls = []
+        def generate(messages):
+            calls.append(messages)
+            return next(replies)
+        runtime._generate = generate
+        result = runtime.answer(REQUEST)
+        self.assertEqual(len(calls), 2)
+        self.assertIn('Source-based answer to format', calls[1][1]['content'])
+        self.assertIn('The function returns 42.', calls[1][1]['content'])
+        self.assertEqual(set(result), {'claims'})
+        self.assertEqual(result['claims'][0]['text'], 'answer returns 42')
+
+    def test_unsupported_draft_stops_before_formatting(self):
+        runtime = Runtime.__new__(Runtime)
+        calls = []
+        def generate(messages):
+            calls.append(messages)
+            return 'NOT_SUPPORTED'
+        runtime._generate = generate
+        self.assertEqual(runtime.answer(REQUEST), {'claims': []})
+        self.assertEqual(len(calls), 1)
+
+    def test_bad_format_has_one_bounded_repair_after_drafting(self):
+        runtime = Runtime.__new__(Runtime)
+        replies = iter(('The function returns 42.', 'bad JSON', 'still bad JSON'))
+        calls = []
+        def generate(messages):
+            calls.append(messages)
+            return next(replies)
+        runtime._generate = generate
+        with self.assertRaises(Rejected):
+            runtime.answer(REQUEST)
+        self.assertEqual(len(calls), 3)
 
 
 if __name__ == "__main__":

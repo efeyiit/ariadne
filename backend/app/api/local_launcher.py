@@ -28,8 +28,8 @@ from app.security.identity.http import build_identity_http_from_env
 
 ROOT = Path(__file__).resolve().parents[3]
 MODEL_ID = "intfloat/multilingual-e5-small"
-ANSWER_MODEL_ID = "Qwen/Qwen2.5-Coder-1.5B-Instruct"
-PROMPT_VERSION = "shared-passage-selection-v5"
+ANSWER_MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
+PROMPT_VERSION = "two-stage-passage-selection-v6"
 
 
 def _free(port: int) -> None:
