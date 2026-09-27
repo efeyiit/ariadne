@@ -32,6 +32,8 @@ Open **http://127.0.0.1:8080**. Stop with Ctrl+C. The service listens on loopbac
 - **Public GitHub:** paste a repository URL. Sources are fetched at a real commit; GitHub's unauthenticated API limits apply.
 - **Local/private:** choose the project folder. Selected text files are copied into local storage; the original files are never executed or changed. Common secret files and generated directories are excluded. Review your selection: filtering cannot identify every secret.
 - Run analysis for architecture, dependencies, security observations, testing observations, refactoring candidates, and documentation drafts. Follow findings to the saved source lines or export the complete report.
+- The Overview review connects project purpose, source-linked module explanations, prioritized findings and a dependency diagram. Use **Analyze snapshot** to generate a fresh report; previous results are preserved.
+- Choose **English** or **Türkçe** in the header. English is the default; the preference is saved on this browser. New report explanations use the selected language.
 - Reports and source snapshots survive restarts. Reimporting changed files creates a new content identity; old source links stay pinned to their original snapshot.
 
 Local imports allow up to 2,000 selected files, 1 MiB per file, and 20 MiB total text. Parsing covers Python, TypeScript/TSX, Java, C#, and C++; other supported text can provide documentation context. Analysis is static: test detection is not test execution, and absence of findings does not establish correctness or security.

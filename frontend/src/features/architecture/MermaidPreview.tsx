@@ -1,9 +1,11 @@
+import { useLocale } from '../local/locale';
 import { useEffect, useId, useState } from 'react';
 import { createSandboxDocument, validateMermaidSource, validateMermaidSvg, type MermaidDiagramKind } from './mermaid-security';
 
 type PreviewState = { status: 'loading' } | { status: 'ready'; document: string } | { status: 'error'; message: string };
 
 export function MermaidPreview({ source, kind, title }: { source: string; kind: MermaidDiagramKind; title: string }) {
+  const { t } = useLocale();
   const reactId = useId();
   const [theme, setTheme] = useState<'light' | 'dark'>(() => document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light');
   const [preview, setPreview] = useState<PreviewState>({ status: 'loading' });
@@ -65,7 +67,7 @@ export function MermaidPreview({ source, kind, title }: { source: string; kind: 
     return () => { active = false; };
   }, [source, kind, theme, reactId]);
 
-  if (preview.status === 'loading') return <div className="diagram-preview-loading" role="status" aria-busy="true">Rendering Mermaid preview locally…</div>;
-  if (preview.status === 'error') return <div className="diagram-preview-error" role="status">{preview.message}</div>;
+  if (preview.status === 'loading') return <div className="diagram-preview-loading" role="status" aria-busy="true">{t('Rendering Mermaid preview locally…')}</div>;
+  if (preview.status === 'error') return <div className="diagram-preview-error" role="status">{t(preview.message)}</div>;
   return <iframe className={`mermaid-sandbox mermaid-sandbox-${kind}`} title={title} sandbox="" referrerPolicy="no-referrer" srcDoc={preview.document}/>;
 }

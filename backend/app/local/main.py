@@ -3,6 +3,7 @@
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
+from typing import Literal
 from secrets import token_urlsafe
 
 from fastapi import FastAPI, HTTPException
@@ -31,6 +32,11 @@ class GitHubInput(WireModel):
 class SnapshotInput(WireModel):
     repository_id: str = Field(min_length=1, max_length=200)
     snapshot_id: str = Field(min_length=1, max_length=100)
+
+
+class AnalyzeInput(SnapshotInput):
+    force: bool = False
+    language: Literal["en", "tr"] = "en"
 
 
 class ChatInput(SnapshotInput):
@@ -67,6 +73,7 @@ def create_local_app(data_dir: Path, *, max_body_bytes: int = 30 * 1024 * 1024) 
                 from app.local_inference.provider import LocalAnswerProvider, LocalEmbeddingProvider
                 try:
                     app.state.retrieval = LocalRetrieval(data_dir / "vectors", store, LocalEmbeddingProvider(), LocalAnswerProvider())
+                    app.state.runtime.answer_provider = app.state.retrieval.provider
                 except Exception:
                     # Optional indexing must never prevent static analysis from opening.
                     app.state.retrieval = None
@@ -155,9 +162,9 @@ def create_local_app(data_dir: Path, *, max_body_bytes: int = 30 * 1024 * 1024) 
         return JSONResponse({"path": path, "content": saved.sources[path], "snapshot_id": snapshot_id}, headers={"Cache-Control": "no-store"})
 
     @app.post("/api/local/analyze")
-    def analyze(body: SnapshotInput):
+    def analyze(body: AnalyzeInput):
         get_source(body.repository_id, body.snapshot_id)
-        return app.state.runtime.analyze(body.repository_id, body.snapshot_id)
+        return app.state.runtime.analyze(body.repository_id, body.snapshot_id, force=body.force, language=body.language)
 
     @app.get("/api/local/jobs/{job_id}")
     def job(job_id: str):

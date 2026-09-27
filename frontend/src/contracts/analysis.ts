@@ -156,7 +156,14 @@ const analysisResultV2Schema = makeAnalysisV2Schema(repositorySnapshotSchema);
 
 export const analysisResultSchema = z.union([analysisResultV1Schema, analysisResultV2Schema]);
 
-export const localAnalysisResultSchema = makeAnalysisV2Schema(sourceSnapshotSchema);
+const explanationSchema = z.object({status: z.enum(['answered','static','unavailable','rejected','no_evidence','not_requested']),
+  claims: z.array(z.object({text:z.string(),citations:z.array(z.object({path:z.string(),start_line:z.number().int().positive(),end_line:z.number().int().positive(),quote:z.string()}))}))});
+const reviewSchema = z.object({version:z.literal(1),language:z.enum(['en','tr']),generated_at:z.string(),ai_status:z.enum(['available','unavailable']),
+  purpose:explanationSchema,readme_path:z.string().nullable(),diagram:z.string().nullable(),entry_points:z.array(z.object({path:z.string(),start_line:z.number()})),
+  modules:z.array(z.object({path:z.string(),start_line:z.number(),language:z.string(),connections:z.number(),symbols:z.array(z.object({name:z.string(),start_line:z.number()})),explanation:explanationSchema})),
+  priorities:z.array(z.object({finding_id:z.string(),severity:z.string(),issue_type:z.string(),location:sourceLocationSchema,explanation:explanationSchema})),
+  scope:z.object({source_files:z.number(),parsed_files:z.number(),excluded_files:z.number(),explained_modules:z.number(),model_calls:z.number(),total_findings:z.number()})});
+export const localAnalysisResultSchema = makeAnalysisV2Schema(sourceSnapshotSchema).safeExtend({review:reviewSchema.optional()});
 export type LocalAnalysisResult = z.infer<typeof localAnalysisResultSchema>;
 
 export type AnalysisResult = z.infer<typeof analysisResultSchema>;

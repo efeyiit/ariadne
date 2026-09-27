@@ -17,7 +17,7 @@ PARSED_SUFFIXES = {".py", ".ts", ".tsx", ".mts", ".cts", ".java", ".cs", ".cpp",
 
 
 def material_for(source: LocalSnapshot) -> SnapshotMaterial:
-    files, code, documents = [], {}, {}
+    files, code, documents, coverage = [], {}, {}, {}
     for path, content in source.sources.items():
         raw = content.encode("utf-8")
         suffix = PurePosixPath(path).suffix.lower()
@@ -25,16 +25,20 @@ def material_for(source: LocalSnapshot) -> SnapshotMaterial:
         files.append(RepositoryFile(path, sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest(),
                                     len(raw), LANGUAGES.get(suffix), included,
                                     None if included else "document_or_unsupported_language"))
-        (code if included else documents)[path] = content
+        if path == "coverage.xml":
+            coverage[path] = content
+        else:
+            (code if included else documents)[path] = content
     snapshot = RepositorySnapshot(repository_id=source.repository_id, github_url=source.github_url or "", name=source.name,
                                   default_branch="", commit_sha=source.commit_sha, tree_sha="",
                                   files=tuple(files), languages=tuple(Counter(f.language for f in files if f.language).items()),
                                   frameworks=(), snapshot_id=source.snapshot_id if source.source_kind == "local" else None)
-    return SnapshotMaterial(snapshot=snapshot, sources=code, document_sources=documents, coverage_artifacts={})
+    return SnapshotMaterial(snapshot=snapshot, sources=code, document_sources=documents, coverage_artifacts=coverage)
 
 
 class LocalRuntime:
-    def __init__(self, store: LocalStore):
+    def __init__(self, store: LocalStore, answer_provider=None):
+        self.answer_provider = answer_provider
         self.store = store
         self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="local-analysis")
         self._lock = Lock()
@@ -56,12 +60,14 @@ class LocalRuntime:
         self.store.save_snapshot(source)
         return source
 
-    def analyze(self, repository_id: str, snapshot_id: str) -> StoredJob:
+    def analyze(self, repository_id: str, snapshot_id: str, *, force=False, language="en") -> StoredJob:
+        if language not in ("en", "tr"):
+            raise ValueError("Unsupported report language")
         with self._lock:
             if self._closed:
                 raise ValueError("runtime is closed")
             existing = self.store.latest_job(repository_id, snapshot_id)
-            if existing is not None and existing.status not in ("failed", "cancelled"):
+            if existing is not None and (existing.status in ("queued", "running") or (not force and existing.status not in ("failed", "cancelled"))):
                 return existing
             if sum(self.store.load_job(job_id).status in ("queued", "running")
                    for job_id in self._stop) >= 8:
@@ -73,7 +79,7 @@ class LocalRuntime:
             self.store.save_job(job)
             self._stop[job.job_id] = Event()
             try:
-                self._pool.submit(self._run, job, source, self._stop[job.job_id])
+                self._pool.submit(self._run, job, source, self._stop[job.job_id], language)
             except Exception:
                 self._stop.pop(job.job_id, None)
                 job.status = "failed"
@@ -82,21 +88,30 @@ class LocalRuntime:
                 raise
             return job
 
-    def _run(self, job: StoredJob, source: LocalSnapshot, stop: Event) -> None:
+    def _run(self, job: StoredJob, source: LocalSnapshot, stop: Event, language="en") -> None:
         try:
-            job.status = "running"
-            self.store.save_job(job)
+            with self._lock:
+                if stop.is_set():
+                    job.status = "cancelled"
+                    self.store.save_job(job)
+                    self._stop.pop(job.job_id, None)
+                    return
+                job.status = "running"
+                self.store.save_job(job)
             material = material_for(source)
             coordinator = Coordinator(lambda owner, repo: material.snapshot if repo == source.repository_id else None,
                                       max_bytes=20 * 1024 * 1024)
             report = coordinator.run("local", material, should_stop=stop.is_set)
+            from app.local.review import build_review
+            result = to_analysis_result(report, str(uuid4()))
+            payload = result.model_dump(mode="json")
+            payload["review"] = build_review(source, payload, language=language, provider=self.answer_provider, should_stop=stop.is_set)
             with self._lock:
                 if stop.is_set():
                     job.status = "cancelled"
                 else:
-                    result = to_analysis_result(report, str(uuid4()))
                     self.store.save_analysis(result.analysis_id, source.repository_id, source.snapshot_id,
-                                             result.model_dump(mode="json"))
+                                             payload)
                     job.status = report.status
                     job.analysis_id = result.analysis_id
                 self.store.save_job(job)
