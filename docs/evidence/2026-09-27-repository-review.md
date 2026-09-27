@@ -31,12 +31,16 @@ source quotations and original analyzer details are preserved.
   explanation. A supplied root `coverage.xml` reaches the testing analyzer; absent
   coverage is never synthesized. Cancelled queued work no longer prepares sources.
 
-## Remaining verification and limits
+## Final live acceptance and limits
 
-The last full browser/model run preceded the final AST and priority refinements.
-Their unit checks passed, but restarting the running service to validate the final
-combined build was blocked by the execution environment. That final restart and
-browser acceptance remain pending; this is not a fully closed live acceptance.
+After restarting, the final combined build generated fresh English and Turkish
+reports with the real local model. Project purpose matched the README; simple
+module explanations correctly showed `number + 1` and printing the placeholder.
+The previously observed contradictory arithmetic was absent. Test fixture numeric
+literals were retained in Findings and absent from prioritized changes. The language
+preference survived reload; the 390-pixel layout had no horizontal overflow, with
+zero page/console errors. The Mermaid SVG rendered inside its restricted iframe.
+A report citation opened `src/sample/simple.py` at the exact `return number + 1` line.
 
 AI explanations are bounded to project purpose, up to three application modules
 and two priority findings, with at most 48 source lines per request. Static analysis
